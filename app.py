@@ -26,8 +26,8 @@ LINK_CADASTRO = (
 LINK_COMUNIDADE_FINAL = "https://t.me/+rtq84bGVBhQyZmJh"
 
 # Mídias
-IMG1_URL = "https://i.postimg.cc/wxkkz20M/presente-do-jota.jpg"
-IMG2_URL = "https://i.postimg.cc/8kbbG4tT/presente-do-jota-2.png"
+IMG1_URL = "https://i.postimg.cc/Z5k8RDCs/presente-da-marluce.png"
+IMG2_URL = "https://i.postimg.cc/WzkDcT6V/presente-da-marluce-2.png"
 
 # Cache JSON
 CACHE_PATH = os.path.join(os.path.dirname(__file__), "file_ids.json")
