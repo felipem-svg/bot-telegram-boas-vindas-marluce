@@ -140,7 +140,7 @@ async def start(update, context):
     chat_id = update.effective_chat.id
     await _retry_send(lambda: context.bot.send_message(chat_id=chat_id, text="⏳ Preparando seu presente…"))
     await send_audio_fast(context, chat_id, caption="🔊 Mensagem rápida antes de continuar")
-    caption = "🎁 *Presente do Jota aguardando…*\n\nClique no botão abaixo para abrir sua conta e garantir seu presente."
+    caption = "🎁 *Presente da Marluce aguardando…*\n\nClique no botão abaixo para abrir sua conta e garantir seu presente."
     await send_photo_from_url(context, chat_id, "img1", IMG1_URL, caption, btn_criar_conta())
     schedule_followup(context, chat_id, WAIT_SECONDS)
 
