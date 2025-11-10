@@ -1,152 +1,187 @@
-import os
+import os, json, asyncio, logging
 from dotenv import load_dotenv
-from telegram import (
-    Update, InlineKeyboardButton, InlineKeyboardMarkup, ChatJoinRequest
-)
+from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, InputFile
 from telegram.ext import (
-    ApplicationBuilder, CommandHandler, MessageHandler, CallbackQueryHandler,
-    ChatJoinRequestHandler, ContextTypes, filters
+    ApplicationBuilder, CommandHandler, CallbackQueryHandler,
+    ContextTypes, JobQueue, MessageHandler, filters
 )
+from telegram.error import RetryAfter, TimedOut
+from telegram.request import HTTPXRequest
 
-from db import init_db, upsert_user, set_consent, set_stage, log_event
-from sequences import WELCOME_SEQUENCE
-from utils import deep_link
+# ========= LOGGING =========
+logging.basicConfig(format="%(asctime)s [%(levelname)s] %(name)s: %(message)s", level=logging.INFO)
+log = logging.getLogger("presente-do-jota")
 
+# ========= CONFIG =========
 load_dotenv()
-TOKEN = os.getenv("TELEGRAM_TOKEN")
-ADMIN_CHAT_ID = os.getenv("ADMIN_CHAT_ID")
-
+TOKEN = os.getenv("TELEGRAM_TOKEN") or ""
 if not TOKEN:
-    raise RuntimeError("Defina TELEGRAM_TOKEN no .env")
+    raise RuntimeError("❌ Defina TELEGRAM_TOKEN no .env ou nas Variables do Railway")
 
-# ===== Handlers =====
+# Links
+LINK_CADASTRO = (
+    "https://click.betboom.com/4EKfevQv?landing=2550&sub_id1=grupowpp"
+   
+)
+LINK_COMUNIDADE_FINAL = "https://t.me/+rtq84bGVBhQyZmJh"
 
-async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    user = update.effective_user
-    args = context.args or []
-    source = None
-    if args:
-        source = args[0][:100]  # startparam de origem (ex.: grp_-100123456)
-    upsert_user(user.id, user.username, user.full_name, source)
+# Mídias
+IMG1_URL = "https://i.postimg.cc/wxkkz20M/presente-do-jota.jpg"
+IMG2_URL = "https://i.postimg.cc/8kbbG4tT/presente-do-jota-2.png"
 
-    kb = InlineKeyboardMarkup([
-        [InlineKeyboardButton("Quero receber as boas‑vindas", callback_data="consent_yes")],
-        [InlineKeyboardButton("Não, obrigado", callback_data="consent_no")],
-    ])
-    await update.message.reply_text(
-        f"Olá, {user.first_name}! Posso te enviar uma sequência curta de boas‑vindas?",
-        reply_markup=kb,
+# Cache JSON
+CACHE_PATH = os.path.join(os.path.dirname(__file__), "file_ids.json")
+def load_cache():
+    try:
+        with open(CACHE_PATH, "r", encoding="utf-8") as f: return json.load(f)
+    except Exception: return {}
+def save_cache(d: dict):
+    try:
+        with open(CACHE_PATH, "w", encoding="utf-8") as f: json.dump(d, f)
+    except Exception as e: log.warning("Não consegui salvar cache de file_id: %s", e)
+FILE_IDS = load_cache()
+
+# Constantes
+CB_CONFIRM_SIM = "confirm_sim"
+WAIT_SECONDS = 120
+PENDING_FOLLOWUPS: set[int] = set()
+AUDIO_FILE_LOCAL = "Audio.mp3"
+
+# ====== BOTÕES ======
+def btn_criar_conta():
+    return InlineKeyboardMarkup([[InlineKeyboardButton("🟢 Criar conta agora", url=LINK_CADASTRO)]])
+def btn_sim():
+    return InlineKeyboardMarkup([[InlineKeyboardButton("✅ SIM", callback_data=CB_CONFIRM_SIM)]])
+def btn_acessar_comunidade():
+    return InlineKeyboardMarkup([[InlineKeyboardButton("🚀 Acessar comunidade", url=LINK_COMUNIDADE_FINAL)]])
+
+# ====== RETRY ======
+async def _retry_send(coro_factory, max_attempts=2):
+    last = None
+    for _ in range(max_attempts):
+        try:
+            return await coro_factory()
+        except RetryAfter as e:
+            await asyncio.sleep(getattr(e, "retry_after", 1)); last = e
+        except TimedOut:
+            await asyncio.sleep(1)
+        except Exception as e:
+            last = e; break
+    if last: raise last
+
+# ====== FOTO ======
+async def send_photo_from_url(context, chat_id, file_id_key, url, caption=None, reply_markup=None):
+    fid = FILE_IDS.get(file_id_key)
+    try:
+        if fid:
+            log.info("Foto via file_id cache (%s)", file_id_key)
+            return await _retry_send(lambda: context.bot.send_photo(chat_id=chat_id, photo=fid, caption=caption, parse_mode="Markdown", reply_markup=reply_markup))
+        log.info("Foto via URL (%s)", file_id_key)
+        msg = await _retry_send(lambda: context.bot.send_photo(chat_id=chat_id, photo=url, caption=caption, parse_mode="Markdown", reply_markup=reply_markup))
+        if msg and msg.photo:
+            FILE_IDS[file_id_key] = msg.photo[-1].file_id; save_cache(FILE_IDS)
+        return msg
+    except Exception as e:
+        log.warning("Falha ao enviar foto (%s)", e)
+        await _retry_send(lambda: context.bot.send_message(chat_id=chat_id, text=caption or "imagem não disponível", parse_mode="Markdown", reply_markup=reply_markup))
+
+# ====== ÁUDIO ======
+async def send_audio_fast(context, chat_id, caption=None):
+    fid_env = os.getenv("FILE_ID_AUDIO") or ""
+    if fid_env:
+        log.info("Áudio via FILE_ID_AUDIO=%s...", fid_env[:8])
+        try:
+            return await _retry_send(lambda: context.bot.send_audio(chat_id=chat_id, audio=fid_env, caption=caption))
+        except Exception as e:
+            log.warning("file_id ENV falhou: %s", e)
+
+    fid_cache = FILE_IDS.get("audio")
+    if fid_cache:
+        log.info("Áudio via cache=%s...", fid_cache[:8])
+        try:
+            return await _retry_send(lambda: context.bot.send_audio(chat_id=chat_id, audio=fid_cache, caption=caption))
+        except Exception as e:
+            log.warning("file_id cache falhou: %s", e)
+            FILE_IDS.pop("audio", None); save_cache(FILE_IDS)
+
+    full = os.path.join(os.path.dirname(__file__), AUDIO_FILE_LOCAL)
+    if os.path.exists(full) and os.path.getsize(full) > 0:
+        with open(full, "rb") as f:
+            msg = await _retry_send(lambda: context.bot.send_audio(chat_id=chat_id, audio=InputFile(f, filename="Audio.mp3"), caption=caption))
+        if msg and msg.audio:
+            FILE_IDS["audio"] = msg.audio.file_id; save_cache(FILE_IDS)
+        return msg
+    log.warning("Nenhuma rota de áudio disponível.")
+
+# ====== COMANDOS ======
+async def envcheck(update, context):
+    fid = os.getenv("FILE_ID_AUDIO") or ""
+    await _retry_send(lambda: context.bot.send_message(chat_id=update.effective_chat.id, text=f"FILE_ID_AUDIO detectado: {fid[:12]}..."))
+
+async def ids(update, context):
+    data = { "FILE_ID_AUDIO": FILE_IDS.get("audio"), "FILE_ID_IMG_INICIAL": FILE_IDS.get("img1"), "FILE_ID_IMG_FINAL": FILE_IDS.get("img2") }
+    txt = "file_ids salvos:\n" + "\n".join(f"{k}: {v or '-'}" for k, v in data.items())
+    await _retry_send(lambda: context.bot.send_message(chat_id=update.effective_chat.id, text=txt))
+
+async def audiotest(update, context):
+    await send_audio_fast(context, update.effective_chat.id, caption="🔊 teste de áudio")
+
+# Captura automática
+async def capture_audio(update, context):
+    msg = update.effective_message
+    fid = msg.audio.file_id if msg.audio else (msg.voice.file_id if msg.voice else None)
+    if not fid: return
+    FILE_IDS["audio"] = fid; save_cache(FILE_IDS)
+    await _retry_send(lambda: context.bot.send_message(chat_id=update.effective_chat.id, text=f"🎧 Áudio salvo!\nFILE_ID_AUDIO=\n{fid}"))
+    log.info("Audio file_id salvo: %s", fid)
+
+# ====== /start ======
+async def start(update, context):
+    chat_id = update.effective_chat.id
+    await _retry_send(lambda: context.bot.send_message(chat_id=chat_id, text="⏳ Preparando seu presente…"))
+    await send_audio_fast(context, chat_id, caption="🔊 Mensagem rápida antes de continuar")
+    caption = "🎁 *Presente do Jota aguardando…*\n\nClique no botão abaixo para abrir sua conta e garantir seu presente."
+    await send_photo_from_url(context, chat_id, "img1", IMG1_URL, caption, btn_criar_conta())
+    schedule_followup(context, chat_id, WAIT_SECONDS)
+
+# ====== FOLLOW-UP ======
+def schedule_followup(context, chat_id, wait_seconds):
+    if chat_id in PENDING_FOLLOWUPS: return
+    PENDING_FOLLOWUPS.add(chat_id)
+    jq = context.application.job_queue
+    jq.run_once(send_followup_job, when=wait_seconds, data={"chat_id": chat_id})
+async def send_followup_job(context):
+    chat_id = context.job.data["chat_id"]
+    await _retry_send(lambda: context.bot.send_message(chat_id=chat_id, text="Eae, já conseguiu finalizar a criação da sua conta?", reply_markup=btn_sim()))
+    PENDING_FOLLOWUPS.discard(chat_id)
+
+# ====== Clique no SIM ======
+async def confirm_sim(update, context):
+    q = update.callback_query; await q.answer()
+    chat_id = q.message.chat_id
+    texto_final = (
+        "🎁 *Presente Liberado!!!*\n\n"
+        "Basta você entrar na comunidade e buscar o sorteio que já vou te enviar,\n"
+        "e fica de olho que o resultado sai na live de *HOJE*."
     )
+    await send_photo_from_url(context, chat_id, "img2", IMG2_URL, texto_final, btn_acessar_comunidade())
 
-async def help_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text("Comandos: /start /help /stop")
-
-async def stop_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    user = update.effective_user
-    set_consent(user.id, False)
-    set_stage(user.id, "stopped")
-    await update.message.reply_text("Ok! Parei a sequência. Para retomar, mande /start.")
-
-async def new_member(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Dispara quando alguém entra no GRUPO/SUPERGRUPO. Convida pro privado."""
-    bot = context.bot
-    chat = update.effective_chat
-    me = await bot.get_me()
-    for member in update.message.new_chat_members:
-        upsert_user(member.id, member.username, member.full_name, source=f"grp_{chat.id}")
-        start_link = deep_link(me.username, f"grp_{chat.id}")
-        kb = InlineKeyboardMarkup([[InlineKeyboardButton("Começar no privado", url=start_link)]])
-        await update.message.reply_text(
-            f"Bem‑vindo(a), {member.first_name}! Para receber a experiência completa, toque abaixo:",
-            reply_markup=kb,
-        )
-        log_event(member.id, "invited_to_private", str(chat.id))
-
-async def join_request(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Aprova solicitações (Chat Join Request) e envia instruções."""
-    req: ChatJoinRequest = update.chat_join_request
-    me = await context.bot.get_me()
-
-    try:
-        await req.approve()
-    except Exception as e:
-        if ADMIN_CHAT_ID:
-            await context.bot.send_message(int(ADMIN_CHAT_ID), f"Falha ao aprovar: {e}")
-
-    upsert_user(req.from_user.id, req.from_user.username, req.from_user.full_name, source=f"cjr_{req.chat.id}")
-    start_link = deep_link(me.username, f"cjr_{req.chat.id}")
-    try:
-        await context.bot.send_message(
-            chat_id=req.from_user.id,
-            text=(
-                "Pedido aprovado! Para ativar suas mensagens de boas‑vindas, toque em ‘Start’ aqui: "
-                f"{start_link}"
-            ),
-        )
-    except Exception as e:
-        # Caso o usuário não permita mensagens privadas antes de iniciar o bot
-        if ADMIN_CHAT_ID:
-            await context.bot.send_message(int(ADMIN_CHAT_ID), f"Não consegui DM {req.from_user.id}: {e}")
-    log_event(req.from_user.id, "approved_join", str(req.chat.id))
-
-async def consent_buttons(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    q = update.callback_query
-    await q.answer()
-    user = q.from_user
-
-    if q.data == "consent_yes":
-        set_consent(user.id, True)
-        set_stage(user.id, "welcome_queue")
-        log_event(user.id, "consent", "yes")
-        await q.edit_message_text("Perfeito! Vou te enviar algumas mensagens úteis nas próximas horas.")
-        # agendar sequência
-        for step in WELCOME_SEQUENCE:
-            context.job_queue.run_once(send_sequence_step, when=step.delay_seconds, data={
-                "telegram_id": user.id,
-                "step_id": step.id,
-                "text": step.text,
-            })
-    elif q.data == "consent_no":
-        set_consent(user.id, False)
-        set_stage(user.id, "no_consent")
-        log_event(user.id, "consent", "no")
-        await q.edit_message_text("Sem problemas! Se mudar de ideia, mande /start.")
-
-async def send_sequence_step(context: ContextTypes.DEFAULT_TYPE):
-    data = context.job.data
-    uid = data["telegram_id"]
-    text = data["text"]
-    step_id = data["step_id"]
-    try:
-        await context.bot.send_message(chat_id=uid, text=text, disable_web_page_preview=True)
-        log_event(uid, "drip_sent", step_id)
-    except Exception as e:
-        admin = os.getenv("ADMIN_CHAT_ID")
-        if admin:
-            await context.bot.send_message(int(admin), f"Erro ao enviar {step_id} para {uid}: {e}")
-
-async def fallback_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    # opcional: tratamento de texto no privado
-    pass
-
-# ===== Main =====
+# ====== MAIN ======
+async def on_error(update, context):
+    log.exception("Unhandled error: %s | update=%s", context.error, update)
 
 def main():
-    init_db()
-    app = ApplicationBuilder().token(TOKEN).build()
-
+    request = HTTPXRequest(read_timeout=20.0, write_timeout=20.0, connect_timeout=10.0, pool_timeout=10.0)
+    app = ApplicationBuilder().token(TOKEN).request(request).job_queue(JobQueue()).build()
     app.add_handler(CommandHandler("start", start))
-    app.add_handler(CommandHandler("help", help_cmd))
-    app.add_handler(CommandHandler("stop", stop_cmd))
-
-    app.add_handler(MessageHandler(filters.StatusUpdate.NEW_CHAT_MEMBERS, new_member))
-    app.add_handler(ChatJoinRequestHandler(join_request))
-    app.add_handler(CallbackQueryHandler(consent_buttons))
-
-    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, fallback_text))
-
-    print("Bot rodando (polling). Ctrl+C para sair.")
-    app.run_polling(allowed_updates=["message", "chat_join_request", "callback_query"])
+    app.add_handler(CommandHandler("audiotest", audiotest))
+    app.add_handler(CommandHandler("envcheck", envcheck))
+    app.add_handler(CommandHandler("ids", ids))
+    app.add_handler(MessageHandler(filters.AUDIO | filters.VOICE, capture_audio))
+    app.add_handler(CallbackQueryHandler(confirm_sim, pattern=f"^{CB_CONFIRM_SIM}$"))
+    app.add_error_handler(on_error)
+    log.info("🤖 Bot rodando. Usando FILE_ID_AUDIO do env e fallback locais.")
+    app.run_polling(drop_pending_updates=True)
 
 if __name__ == "__main__":
     main()
