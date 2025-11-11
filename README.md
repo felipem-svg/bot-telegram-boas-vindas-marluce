@@ -1,3 +1,1 @@
-# Telegram Deposit Validator Bot (HTTP 404 patch)
-
-Agora usando download_as_bytearray para evitar erros 404 ao baixar fotos.
+app.py captura vídeos (video e document.video) e salva file_id; bot.py valida prints com OpenAI.

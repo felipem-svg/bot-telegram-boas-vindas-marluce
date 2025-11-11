@@ -1,3 +1,4 @@
+
 import os, json, asyncio, logging
 from dotenv import load_dotenv
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, InputFile
@@ -21,7 +22,6 @@ if not TOKEN:
 # Links
 LINK_CADASTRO = (
     "https://land.betboom.bet.br/promo/topslots-br/?utm_source=inf&utm_medium=bloggers&utm_campaign=265&utm_content=topslots_br&utm_term=5610&aff=alanbase&qtag=a5610_t265_c270_s019a7023-794b-7178-92ef-f9ceb8fe77a2_"
-   
 )
 LINK_COMUNIDADE_FINAL = "https://t.me/+Qu9Lkn7hrX1kZjQx"
 
@@ -119,14 +119,21 @@ async def envcheck(update, context):
     await _retry_send(lambda: context.bot.send_message(chat_id=update.effective_chat.id, text=f"FILE_ID_AUDIO detectado: {fid[:12]}..."))
 
 async def ids(update, context):
-    data = { "FILE_ID_AUDIO": FILE_IDS.get("audio"), "FILE_ID_IMG_INICIAL": FILE_IDS.get("img1"), "FILE_ID_IMG_FINAL": FILE_IDS.get("img2") }
+    data = {
+        "FILE_ID_AUDIO": FILE_IDS.get("audio"),
+        "FILE_ID_IMG_INICIAL": FILE_IDS.get("img1"),
+        "FILE_ID_IMG_FINAL": FILE_IDS.get("img2"),
+        "FILE_ID_VIDEO1": FILE_IDS.get("video1"),
+        "FILE_ID_VIDEO2": FILE_IDS.get("video2"),
+        "FILE_ID_VIDEO3": FILE_IDS.get("video3"),
+    }
     txt = "file_ids salvos:\n" + "\n".join(f"{k}: {v or '-'}" for k, v in data.items())
     await _retry_send(lambda: context.bot.send_message(chat_id=update.effective_chat.id, text=txt))
 
 async def audiotest(update, context):
     await send_audio_fast(context, update.effective_chat.id, caption="🔊 teste de áudio")
 
-# Captura automática
+# Captura automática de AUDIO
 async def capture_audio(update, context):
     msg = update.effective_message
     fid = msg.audio.file_id if msg.audio else (msg.voice.file_id if msg.voice else None)
@@ -134,6 +141,22 @@ async def capture_audio(update, context):
     FILE_IDS["audio"] = fid; save_cache(FILE_IDS)
     await _retry_send(lambda: context.bot.send_message(chat_id=update.effective_chat.id, text=f"🎧 Áudio salvo!\nFILE_ID_AUDIO=\n{fid}"))
     log.info("Audio file_id salvo: %s", fid)
+
+# ====== Captura automática de VÍDEO (vídeo ou documento de vídeo)
+async def capture_video(update, context):
+    msg = update.effective_message
+    vid = msg.video or (msg.document if msg.document and (msg.document.mime_type or "").startswith("video/") else None)
+    if not vid:
+        return
+    fid = vid.file_id
+    for key in ("video1","video2","video3"):
+        if not FILE_IDS.get(key):
+            FILE_IDS[key] = fid; save_cache(FILE_IDS)
+            await _retry_send(lambda: context.bot.send_message(chat_id=update.effective_chat.id, text=f"🎬 Vídeo salvo em {key}!\nFILE_ID=\n{fid}"))
+            break
+    else:
+        await _retry_send(lambda: context.bot.send_message(chat_id=update.effective_chat.id, text=f"🎬 Recebi um vídeo. FILE_ID=\n{fid}"))
+    log.info("Video file_id recebido: %s", fid)
 
 # ====== /start ======
 async def start(update, context):
@@ -178,9 +201,11 @@ def main():
     app.add_handler(CommandHandler("envcheck", envcheck))
     app.add_handler(CommandHandler("ids", ids))
     app.add_handler(MessageHandler(filters.AUDIO | filters.VOICE, capture_audio))
+    # ✅ captura vídeo como VIDEO e como DOCUMENT.VIDEO
+    app.add_handler(MessageHandler(filters.VIDEO | filters.Document.VIDEO, capture_video))
     app.add_handler(CallbackQueryHandler(confirm_sim, pattern=f"^{CB_CONFIRM_SIM}$"))
     app.add_error_handler(on_error)
-    log.info("🤖 Bot rodando. Usando FILE_ID_AUDIO do env e fallback locais.")
+    log.info("🤖 Bot rodando. FILE_ID de vídeos será capturado automaticamente.")
     app.run_polling(drop_pending_updates=True)
 
 if __name__ == "__main__":
