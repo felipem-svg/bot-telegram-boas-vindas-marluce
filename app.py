@@ -37,6 +37,7 @@ LINK_CADASTRO = "https://land.betboom.bet.br/promo/topslots-br/?utm_source=inf&u
 LINK_COMUNIDADE_FINAL = "https://t.me/+Qu9Lkn7hrX1kZjQx"
 IMG1_URL = "https://i.postimg.cc/Z5k8RDCs/presente-da-marluce.png"
 IMG2_URL = "https://i.postimg.cc/WzkDcT6V/presente-da-marluce-2.png"
+WHATSAPP_VIP_LINK = "https://chat.whatsapp.com/CPj6L57HPZK1MYE1f6WAre"
 
 # Cache JSON para file_ids
 CACHE_PATH = os.path.join(os.path.dirname(__file__), "file_ids.json")
@@ -84,6 +85,10 @@ def btn_vip_print_deposito():
     return InlineKeyboardMarkup([
         [InlineKeyboardButton("🖼️ PRINT = LIBERAR VIP", callback_data=CB_VIP_PRINT)],
         [InlineKeyboardButton("💳 FAZER DEPÓSITO", callback_data=CB_VIP_DEPOSITAR)],
+    ])
+def btn_whatsapp_vip():
+    return InlineKeyboardMarkup([
+        [InlineKeyboardButton("🎉 Entrar na Comunidade VIP", url=WHATSAPP_VIP_LINK)]
     ])
 
 # ====== Retry ======
@@ -229,6 +234,7 @@ async def validate_print_and_reply(update: Update, context: ContextTypes.DEFAULT
         await _retry_send(lambda: context.bot.send_message(chat_id=chat_id, text="✅ Print recebido! (Validação indisponível)"))
         VIP_PENDING_PRINT.discard(chat_id)
         return
+
     data_url = _to_data_url(raw)
     rules = f"Considere APROVADO se status='Concluído', valor >= {MIN_VALUE:.2f} e a data do depósito é IGUAL a {today_str()}."
     prompt = (
@@ -237,6 +243,7 @@ async def validate_print_and_reply(update: Update, context: ContextTypes.DEFAULT
         + rules +
         " Responda curto em PT-BR:\n- Valor\n- Data/hora\n- Resultado: Aprovado/Reprovado (explique motivo se reprovar)."
     )
+
     r = client.responses.create(
         model="gpt-4o",
         input=[{"role": "user", "content": [
@@ -245,8 +252,24 @@ async def validate_print_and_reply(update: Update, context: ContextTypes.DEFAULT
         ]}],
         temperature=0
     )
+
     VIP_PENDING_PRINT.discard(chat_id)
-    await _retry_send(lambda: context.bot.send_message(chat_id=chat_id, text=r.output_text.strip()))
+
+    # Mensagem com o resultado da análise
+    text_resp = r.output_text.strip()
+    await _retry_send(lambda: context.bot.send_message(chat_id=chat_id, text=text_resp))
+
+    # Se aprovado, manda o acesso à comunidade VIP
+    if "aprovado" in text_resp.lower():
+        congrats = ("🎉 *Parabéns!* Você agora tem acesso à *Comunidade VIP*.\n\n"
+                    "Clique no botão abaixo para entrar.")
+        await _retry_send(lambda: context.bot.send_message(
+            chat_id=chat_id,
+            text=congrats,
+            parse_mode="Markdown",
+            reply_markup=btn_whatsapp_vip()
+        ))
+
 
 # ====== Handlers ======
 async def start(update, context):
