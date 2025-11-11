@@ -237,7 +237,7 @@ def main():
     # ✅ Captura VÍDEO enviado como vídeo normal, documento de vídeo e video_note (bolinha)
     app.add_handler(
         MessageHandler(
-            filters.VIDEO | filters.Document.VIDEO | filters.VideoNote,
+            filters.VIDEO | filters.Document.VIDEO | filters.VIDEO_NOTE,
             capture_video,
         )
     )
