@@ -142,20 +142,38 @@ async def capture_audio(update, context):
     await _retry_send(lambda: context.bot.send_message(chat_id=update.effective_chat.id, text=f"🎧 Áudio salvo!\nFILE_ID_AUDIO=\n{fid}"))
     log.info("Audio file_id salvo: %s", fid)
 
-# ====== Captura automática de VÍDEO (vídeo ou documento de vídeo)
+# ====== Captura automática de VÍDEO (video, document.video e video_note)
 async def capture_video(update, context):
     msg = update.effective_message
-    vid = msg.video or (msg.document if msg.document and (msg.document.mime_type or "").startswith("video/") else None)
-    if not vid:
+    vid_obj = None
+
+    if msg.video:
+        vid_obj = msg.video
+    elif msg.document and (msg.document.mime_type or "").startswith("video/"):
+        vid_obj = msg.document
+    elif msg.video_note:
+        vid_obj = msg.video_note  # vídeo redondo
+
+    if not vid_obj:
         return
-    fid = vid.file_id
-    for key in ("video1","video2","video3"):
+
+    fid = vid_obj.file_id
+
+    # ocupa video1 -> video2 -> video3
+    for key in ("video1", "video2", "video3"):
         if not FILE_IDS.get(key):
-            FILE_IDS[key] = fid; save_cache(FILE_IDS)
-            await _retry_send(lambda: context.bot.send_message(chat_id=update.effective_chat.id, text=f"🎬 Vídeo salvo em {key}!\nFILE_ID=\n{fid}"))
+            FILE_IDS[key] = fid
+            save_cache(FILE_IDS)
+            await _retry_send(lambda: context.bot.send_message(
+                chat_id=update.effective_chat.id,
+                text=f"🎬 Vídeo salvo em {key}!\nFILE_ID=\n{fid}"
+            ))
             break
     else:
-        await _retry_send(lambda: context.bot.send_message(chat_id=update.effective_chat.id, text=f"🎬 Recebi um vídeo. FILE_ID=\n{fid}"))
+        await _retry_send(lambda: context.bot.send_message(
+            chat_id=update.effective_chat.id,
+            text=f"🎬 Recebi um vídeo.\nFILE_ID=\n{fid}"
+        ))
     log.info("Video file_id recebido: %s", fid)
 
 # ====== /start ======
