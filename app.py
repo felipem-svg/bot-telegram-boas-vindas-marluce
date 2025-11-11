@@ -62,8 +62,12 @@ def btn_criar_conta():
     return InlineKeyboardMarkup([[InlineKeyboardButton("🟢 Criar conta agora", url=LINK_CADASTRO)]])
 def btn_sim():
     return InlineKeyboardMarkup([[InlineKeyboardButton("✅ SIM", callback_data=CB_CONFIRM_SIM)]])
+def btn_acessar_comunidade():
+    return InlineKeyboardMarkup([[InlineKeyboardButton("🚀 Acessar comunidade", url=LINK_COMUNIDADE_FINAL)]])
+def btn_acessar_vip():
+    return InlineKeyboardMarkup([[InlineKeyboardButton("🟣 Acessar VIP", callback_data=CB_ACESSAR_VIP)]])
 def btn_comunidade_e_vip():
-    # uma linha por botão (fica empilhado)
+    # Dois botões na mesma mensagem (empilhados). Para lado a lado, junte na mesma lista.
     return InlineKeyboardMarkup([
         [InlineKeyboardButton("🚀 Acessar comunidade", url=LINK_COMUNIDADE_FINAL)],
         [InlineKeyboardButton("🟣 Acessar VIP", callback_data=CB_ACESSAR_VIP)],
@@ -237,9 +241,8 @@ async def confirm_sim(update, context):
         "Basta você entrar na comunidade e buscar o sorteio que já vou te enviar,\n"
         "e fica de olho que o resultado sai na live de *HOJE*."
     )
-    await send_photo_from_url(context, chat_id, "img2", IMG2_URL, texto_final, btn_acessar_comunidade())
-    # botão para abrir o funil VIP
-    await _retry_send(lambda: context.bot.send_message(chat_id=chat_id, text="Quer já garantir sua vaga no *VIP*?", parse_mode="Markdown", reply_markup=btn_acessar_vip()))
+    # 👉 AGORA envia a imagem final já com os DOIS botões: Comunidade + VIP
+    await send_photo_from_url(context, chat_id, "img2", IMG2_URL, texto_final, btn_comunidade_e_vip())
 
 # ====== MAIN ======
 async def on_error(update, context):
@@ -265,7 +268,7 @@ def main():
     app.add_handler(CallbackQueryHandler(vip_btn_depositar, pattern=f"^{CB_VIP_DEPOSITAR}$"))
 
     app.add_error_handler(on_error)
-    log.info("🤖 Bot rodando. VIP habilitado; aguardando prints após os botões.")
+    log.info("🤖 Bot rodando. Mensagem final com dois botões: Comunidade e VIP.")
     app.run_polling(drop_pending_updates=True)
 
 if __name__ == "__main__":
