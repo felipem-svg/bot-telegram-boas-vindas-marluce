@@ -62,7 +62,7 @@
     CB_VIP_PRINT = "vip_print"
     CB_VIP_DEPOSITAR = "vip_depositar"
 
-    WAIT_SECONDS = 120
+    WAIT_SECONDS = 5
     VIP_WAIT_SECONDS = 7 * 60
     VIP_PENDING_PRINT: set[int] = set()   # chats aguardando print
     AUDIO_FILE_LOCAL = "Audio.mp3"
