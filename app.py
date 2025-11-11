@@ -253,13 +253,13 @@ async def validate_print_and_reply(update: Update, context: ContextTypes.DEFAULT
         temperature=0
     )
 
-    VIP_PENDING_PRINT.discard(chat_id)
-
-    # Mensagem com o resultado da análise
     text_resp = r.output_text.strip()
     await _retry_send(lambda: context.bot.send_message(chat_id=chat_id, text=text_resp))
 
-    # Se aprovado, manda o acesso à comunidade VIP
+    # limpa status padrão…
+    VIP_PENDING_PRINT.discard(chat_id)
+
+    # aprovado => libera link VIP
     if "aprovado" in text_resp.lower():
         congrats = ("🎉 *Parabéns!* Você agora tem acesso à *Comunidade VIP*.\n\n"
                     "Clique no botão abaixo para entrar.")
@@ -269,7 +269,24 @@ async def validate_print_and_reply(update: Update, context: ContextTypes.DEFAULT
             parse_mode="Markdown",
             reply_markup=btn_whatsapp_vip()
         ))
+        return
 
+    # reprovado => pede novo print e mantém o chat elegível para reenviar
+    retry_msg = (
+        "⚠️ *Reprovado.*\n"
+        "Por favor, envie **novamente** o *print do depósito* com o item **expandido** (seta para cima), "
+        f"mostrando *status Concluído* e valor ≥ R${MIN_VALUE:.0f} de *hoje*. Assim que chegar, eu valido de novo. 📸"
+    )
+    await _retry_send(lambda: context.bot.send_message(
+        chat_id=chat_id,
+        text=retry_msg,
+        parse_mode="Markdown",
+        reply_markup=btn_vip_print_deposito()
+    ))
+    # reativa a espera por print para aceitar a próxima imagem
+    VIP_PENDING_PRINT.add(chat_id)
+    # opcional: reagendar lembrete
+    schedule_vip_followup(context, chat_id)
 
 # ====== Handlers ======
 async def start(update, context):
