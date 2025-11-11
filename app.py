@@ -62,10 +62,12 @@ def btn_criar_conta():
     return InlineKeyboardMarkup([[InlineKeyboardButton("🟢 Criar conta agora", url=LINK_CADASTRO)]])
 def btn_sim():
     return InlineKeyboardMarkup([[InlineKeyboardButton("✅ SIM", callback_data=CB_CONFIRM_SIM)]])
-def btn_acessar_comunidade():
-    return InlineKeyboardMarkup([[InlineKeyboardButton("🚀 Acessar comunidade", url=LINK_COMUNIDADE_FINAL)]])
-def btn_acessar_vip():
-    return InlineKeyboardMarkup([[InlineKeyboardButton("🟣 Acessar VIP", callback_data=CB_ACESSAR_VIP)]])
+def btn_comunidade_e_vip():
+    # uma linha por botão (fica empilhado)
+    return InlineKeyboardMarkup([
+        [InlineKeyboardButton("🚀 Acessar comunidade", url=LINK_COMUNIDADE_FINAL)],
+        [InlineKeyboardButton("🟣 Acessar VIP", callback_data=CB_ACESSAR_VIP)],
+    ])
 def btn_vip_primeira_escolha():
     return InlineKeyboardMarkup([
         [InlineKeyboardButton("✅ Quero Garantir", callback_data=CB_VIP_GARANTIR)],
