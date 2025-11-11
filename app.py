@@ -23,7 +23,7 @@ LINK_CADASTRO = (
     "https://land.betboom.bet.br/promo/topslots-br/?utm_source=inf&utm_medium=bloggers&utm_campaign=265&utm_content=topslots_br&utm_term=5610&aff=alanbase&qtag=a5610_t265_c270_s019a7023-794b-7178-92ef-f9ceb8fe77a2_"
    
 )
-LINK_COMUNIDADE_FINAL = "https://t.me/+rtq84bGVBhQyZmJh"
+LINK_COMUNIDADE_FINAL = "https://t.me/+Qu9Lkn7hrX1kZjQx"
 
 # Mídias
 IMG1_URL = "https://i.postimg.cc/Z5k8RDCs/presente-da-marluce.png"
