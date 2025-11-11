@@ -41,11 +41,21 @@ def save_cache(d: dict):
     except Exception as e: log.warning("Não consegui salvar cache de file_id: %s", e)
 FILE_IDS = load_cache()
 
-# Constantes
+# ======== CONSTS ========
 CB_CONFIRM_SIM = "confirm_sim"
 WAIT_SECONDS = 120
 PENDING_FOLLOWUPS: set[int] = set()
 AUDIO_FILE_LOCAL = "Audio.mp3"
+
+# ==== VIP / callbacks ====
+CB_ACESSAR_VIP   = "vip_go"
+CB_VIP_GARANTIR  = "vip_garantir"
+CB_VIP_EXPLICAR  = "vip_explicar"
+CB_VIP_PRINT     = "vip_print"
+CB_VIP_DEPOSITAR = "vip_depositar"
+
+VIP_WAIT_SECONDS = 7 * 60
+VIP_PENDING_PRINT: set[int] = set()
 
 # ====== BOTÕES ======
 def btn_criar_conta():
@@ -54,6 +64,18 @@ def btn_sim():
     return InlineKeyboardMarkup([[InlineKeyboardButton("✅ SIM", callback_data=CB_CONFIRM_SIM)]])
 def btn_acessar_comunidade():
     return InlineKeyboardMarkup([[InlineKeyboardButton("🚀 Acessar comunidade", url=LINK_COMUNIDADE_FINAL)]])
+def btn_acessar_vip():
+    return InlineKeyboardMarkup([[InlineKeyboardButton("🟣 Acessar VIP", callback_data=CB_ACESSAR_VIP)]])
+def btn_vip_primeira_escolha():
+    return InlineKeyboardMarkup([
+        [InlineKeyboardButton("✅ Quero Garantir", callback_data=CB_VIP_GARANTIR)],
+        [InlineKeyboardButton("ℹ️ Me explica antes", callback_data=CB_VIP_EXPLICAR)],
+    ])
+def btn_vip_print_deposito():
+    return InlineKeyboardMarkup([
+        [InlineKeyboardButton("🖼️ PRINT = LIBERAR VIP", callback_data=CB_VIP_PRINT)],
+        [InlineKeyboardButton("💳 FAZER DEPÓSITO", callback_data=CB_VIP_DEPOSITAR)],
+    ])
 
 # ====== RETRY ======
 async def _retry_send(coro_factory, max_attempts=2):
@@ -74,9 +96,7 @@ async def send_photo_from_url(context, chat_id, file_id_key, url, caption=None, 
     fid = FILE_IDS.get(file_id_key)
     try:
         if fid:
-            log.info("Foto via file_id cache (%s)", file_id_key)
             return await _retry_send(lambda: context.bot.send_photo(chat_id=chat_id, photo=fid, caption=caption, parse_mode="Markdown", reply_markup=reply_markup))
-        log.info("Foto via URL (%s)", file_id_key)
         msg = await _retry_send(lambda: context.bot.send_photo(chat_id=chat_id, photo=url, caption=caption, parse_mode="Markdown", reply_markup=reply_markup))
         if msg and msg.photo:
             FILE_IDS[file_id_key] = msg.photo[-1].file_id; save_cache(FILE_IDS)
@@ -86,24 +106,19 @@ async def send_photo_from_url(context, chat_id, file_id_key, url, caption=None, 
         await _retry_send(lambda: context.bot.send_message(chat_id=chat_id, text=caption or "imagem não disponível", parse_mode="Markdown", reply_markup=reply_markup))
 
 # ====== ÁUDIO ======
-async def send_audio_fast(context, chat_id, caption=None):
-    fid_env = os.getenv("FILE_ID_AUDIO") or ""
+async def send_audio_fast(context, chat_id, caption=None, var_name="FILE_ID_AUDIO"):
+    fid_env = os.getenv(var_name) or ""
     if fid_env:
-        log.info("Áudio via FILE_ID_AUDIO=%s...", fid_env[:8])
         try:
             return await _retry_send(lambda: context.bot.send_audio(chat_id=chat_id, audio=fid_env, caption=caption))
         except Exception as e:
-            log.warning("file_id ENV falhou: %s", e)
-
+            log.warning("%s falhou: %s", var_name, e)
     fid_cache = FILE_IDS.get("audio")
     if fid_cache:
-        log.info("Áudio via cache=%s...", fid_cache[:8])
         try:
             return await _retry_send(lambda: context.bot.send_audio(chat_id=chat_id, audio=fid_cache, caption=caption))
         except Exception as e:
-            log.warning("file_id cache falhou: %s", e)
             FILE_IDS.pop("audio", None); save_cache(FILE_IDS)
-
     full = os.path.join(os.path.dirname(__file__), AUDIO_FILE_LOCAL)
     if os.path.exists(full) and os.path.getsize(full) > 0:
         with open(full, "rb") as f:
@@ -111,90 +126,105 @@ async def send_audio_fast(context, chat_id, caption=None):
         if msg and msg.audio:
             FILE_IDS["audio"] = msg.audio.file_id; save_cache(FILE_IDS)
         return msg
-    log.warning("Nenhuma rota de áudio disponível.")
 
-# ====== COMANDOS ======
-async def envcheck(update, context):
-    fid = os.getenv("FILE_ID_AUDIO") or ""
-    await _retry_send(lambda: context.bot.send_message(chat_id=update.effective_chat.id, text=f"FILE_ID_AUDIO detectado: {fid[:12]}..."))
+# ====== VÍDEOS (env/cache) ======
+async def send_video_by_slot(context, chat_id, slot: str):
+    idx = slot.replace("video", "")
+    for name in [f"FILE_ID_VIDEO{idx}", f"FILE_ID_VIDEO0{idx}"]:
+        fid_env = os.getenv(name) or ""
+        if fid_env:
+            try:
+                return await _retry_send(lambda: context.bot.send_video(chat_id=chat_id, video=fid_env))
+            except Exception as e:
+                log.warning("%s falhou: %s", name, e)
+    fid_cache = FILE_IDS.get(slot)
+    if fid_cache:
+        try:
+            return await _retry_send(lambda: context.bot.send_video(chat_id=chat_id, video=fid_cache))
+        except Exception as e:
+            FILE_IDS.pop(slot, None); save_cache(FILE_IDS)
 
-async def ids(update, context):
-    data = {
-        "FILE_ID_AUDIO": FILE_IDS.get("audio"),
-        "FILE_ID_IMG_INICIAL": FILE_IDS.get("img1"),
-        "FILE_ID_IMG_FINAL": FILE_IDS.get("img2"),
-        "FILE_ID_VIDEO1": FILE_IDS.get("video1"),
-        "FILE_ID_VIDEO2": FILE_IDS.get("video2"),
-        "FILE_ID_VIDEO3": FILE_IDS.get("video3"),
-    }
-    txt = "file_ids salvos:\n" + "\n".join(f"{k}: {v or '-'}" for k, v in data.items())
-    await _retry_send(lambda: context.bot.send_message(chat_id=update.effective_chat.id, text=txt))
-
-async def audiotest(update, context):
-    await send_audio_fast(context, update.effective_chat.id, caption="🔊 teste de áudio")
-
-# Captura automática de AUDIO
+# ====== CAPTURA ======
 async def capture_audio(update, context):
     msg = update.effective_message
     fid = msg.audio.file_id if msg.audio else (msg.voice.file_id if msg.voice else None)
     if not fid: return
     FILE_IDS["audio"] = fid; save_cache(FILE_IDS)
     await _retry_send(lambda: context.bot.send_message(chat_id=update.effective_chat.id, text=f"🎧 Áudio salvo!\nFILE_ID_AUDIO=\n{fid}"))
-    log.info("Audio file_id salvo: %s", fid)
 
-# ====== Captura automática de VÍDEO (video, document.video e video_note)
 async def capture_video(update, context):
     msg = update.effective_message
-    vid_obj = None
-
-    if msg.video:
-        vid_obj = msg.video
-    elif msg.document and (msg.document.mime_type or "").startswith("video/"):
-        vid_obj = msg.document
-    elif msg.video_note:
-        vid_obj = msg.video_note  # vídeo redondo
-
-    if not vid_obj:
-        return
-
-    fid = vid_obj.file_id
-
-    # ocupa video1 -> video2 -> video3
-    for key in ("video1", "video2", "video3"):
+    vid = msg.video or (msg.document if msg.document and (msg.document.mime_type or '').startswith('video/') else None) or msg.video_note
+    if not vid: return
+    fid = vid.file_id
+    for key in ("video1","video2","video3"):
         if not FILE_IDS.get(key):
-            FILE_IDS[key] = fid
-            save_cache(FILE_IDS)
-            await _retry_send(lambda: context.bot.send_message(
-                chat_id=update.effective_chat.id,
-                text=f"🎬 Vídeo salvo em {key}!\nFILE_ID=\n{fid}"
-            ))
+            FILE_IDS[key] = fid; save_cache(FILE_IDS)
+            await _retry_send(lambda: context.bot.send_message(chat_id=update.effective_chat.id, text=f"🎬 Vídeo salvo em {key}!\nFILE_ID=\n{fid}"))
             break
     else:
-        await _retry_send(lambda: context.bot.send_message(
-            chat_id=update.effective_chat.id,
-            text=f"🎬 Recebi um vídeo.\nFILE_ID=\n{fid}"
-        ))
-    log.info("Video file_id recebido: %s", fid)
+        await _retry_send(lambda: context.bot.send_message(chat_id=update.effective_chat.id, text=f"🎬 Recebi um vídeo.\nFILE_ID=\n{fid}"))
+
+# ====== VIP ======
+def schedule_vip_followup(context, chat_id):
+    for job in context.application.job_queue.get_jobs_by_name(f"vip:{chat_id}"):
+        return
+    context.application.job_queue.run_once(vip_followup_job, when=VIP_WAIT_SECONDS, data={"chat_id": chat_id}, name=f"vip:{chat_id}")
+
+async def vip_followup_job(context):
+    chat_id = context.job.data["chat_id"]
+    if chat_id not in VIP_PENDING_PRINT: return
+    txt = ("Eii, tá por aí? Não sei se você esqueceu, mas são pelo menos *R$500* sorteados para 10 pessoas + 1 chance na *roleta* que pode te dar até um *IPHONE 17 PRO HOJE!*\n\n_Tem poucas pessoas, concorrendo…_\n\nVai abandonar mesmo sua chance de entrar no VIP?")
+    await _retry_send(lambda: context.bot.send_message(chat_id=chat_id, text=txt, parse_mode="Markdown", reply_markup=btn_vip_print_deposito()))
+
+async def ask_vip_print(context, chat_id):
+    VIP_PENDING_PRINT.add(chat_id)
+    txt = ("Todas essas pessoas fizeram parte e *ganharam um prêmio muito bom*, escolheram jogar comigo em um grupo com *mais acesso*!\n\n"
+           "Vou estar aguardando um *print da sua conta Betboom* (Mostrando *detalhes do Depósito*) com pelo menos *R$35* depositados *hoje* e já libero seu acesso à roleta, ok?")
+    await _retry_send(lambda: context.bot.send_message(chat_id=chat_id, text=txt, parse_mode="Markdown", reply_markup=btn_vip_print_deposito()))
+    schedule_vip_followup(context, chat_id)
+
+async def acessar_vip(update, context):
+    q = update.callback_query; await q.answer()
+    chat_id = q.message.chat_id
+    first = (q.from_user.first_name or "amigo")
+    intro = (f"Fala {first}!\n\nJá quer garantir sua *vaga no VIP* + *Chance na roleta* ou prefere que eu te explique rapidinho como funciona?")
+    await _retry_send(lambda: context.bot.send_message(chat_id=chat_id, text=intro, parse_mode="Markdown", reply_markup=btn_vip_primeira_escolha()))
+    await send_audio_fast(context, chat_id, caption="🔊 Explicação rápida (1 min)", var_name="FILE_ID_AUDIO_VIP")
+    await send_video_by_slot(context, chat_id, "video1")
+    await send_video_by_slot(context, chat_id, "video2")
+    await send_video_by_slot(context, chat_id, "video3")
+    await ask_vip_print(context, chat_id)
+
+async def vip_quero_garantir(update, context):
+    q = update.callback_query; await q.answer()
+    await ask_vip_print(context, q.message.chat_id)
+
+async def vip_me_explica(update, context):
+    q = update.callback_query; await q.answer()
+    await ask_vip_print(context, q.message.chat_id)
+
+async def vip_btn_print(update, context):
+    q = update.callback_query; await q.answer()
+    await _retry_send(lambda: context.bot.send_message(chat_id=q.message.chat_id, text="Perfeito! Me envie **agora** o *print do depósito* para liberar o VIP. 📸", parse_mode="Markdown"))
+
+async def vip_btn_depositar(update, context):
+    q = update.callback_query; await q.answer()
+    await _retry_send(lambda: context.bot.send_message(chat_id=q.message.chat_id, text="Assim que fizer o depósito, me envie o *print* para eu liberar seu VIP. 👍", parse_mode="Markdown"))
 
 # ====== /start ======
 async def start(update, context):
     chat_id = update.effective_chat.id
     await _retry_send(lambda: context.bot.send_message(chat_id=chat_id, text="⏳ Preparando seu presente…"))
-    await send_audio_fast(context, chat_id, caption="🔊 Mensagem rápida antes de continuar")
+    await send_audio_fast(context, chat_id, caption="🔊 Mensagem rápida antes de continuar", var_name="FILE_ID_AUDIO")
     caption = "🎁 *Presente da Marluce aguardando…*\n\nClique no botão abaixo para abrir sua conta e garantir seu presente."
     await send_photo_from_url(context, chat_id, "img1", IMG1_URL, caption, btn_criar_conta())
-    schedule_followup(context, chat_id, WAIT_SECONDS)
+    # follow-up de 120s
+    context.application.job_queue.run_once(send_followup_job, when=WAIT_SECONDS, data={"chat_id": chat_id})
 
-# ====== FOLLOW-UP ======
-def schedule_followup(context, chat_id, wait_seconds):
-    if chat_id in PENDING_FOLLOWUPS: return
-    PENDING_FOLLOWUPS.add(chat_id)
-    jq = context.application.job_queue
-    jq.run_once(send_followup_job, when=wait_seconds, data={"chat_id": chat_id})
 async def send_followup_job(context):
     chat_id = context.job.data["chat_id"]
     await _retry_send(lambda: context.bot.send_message(chat_id=chat_id, text="Eae, já conseguiu finalizar a criação da sua conta?", reply_markup=btn_sim()))
-    PENDING_FOLLOWUPS.discard(chat_id)
 
 # ====== Clique no SIM ======
 async def confirm_sim(update, context):
@@ -206,47 +236,34 @@ async def confirm_sim(update, context):
         "e fica de olho que o resultado sai na live de *HOJE*."
     )
     await send_photo_from_url(context, chat_id, "img2", IMG2_URL, texto_final, btn_acessar_comunidade())
+    # botão para abrir o funil VIP
+    await _retry_send(lambda: context.bot.send_message(chat_id=chat_id, text="Quer já garantir sua vaga no *VIP*?", parse_mode="Markdown", reply_markup=btn_acessar_vip()))
 
 # ====== MAIN ======
 async def on_error(update, context):
     log.exception("Unhandled error: %s | update=%s", context.error, update)
 
 def main():
-    request = HTTPXRequest(
-        read_timeout=20.0,
-        write_timeout=20.0,
-        connect_timeout=10.0,
-        pool_timeout=10.0,
-    )
-    app = (
-        ApplicationBuilder()
-        .token(TOKEN)
-        .request(request)
-        .job_queue(JobQueue())
-        .build()
-    )
+    request = HTTPXRequest(read_timeout=20.0, write_timeout=20.0, connect_timeout=10.0, pool_timeout=10.0)
+    app = ApplicationBuilder().token(TOKEN).request(request).job_queue(JobQueue()).build()
 
+    # Comandos
     app.add_handler(CommandHandler("start", start))
-    app.add_handler(CommandHandler("audiotest", audiotest))
-    app.add_handler(CommandHandler("envcheck", envcheck))
-    app.add_handler(CommandHandler("ids", ids))
 
-    # Áudio/voz
+    # Capturas de mídia
     app.add_handler(MessageHandler(filters.AUDIO | filters.VOICE, capture_audio))
+    app.add_handler(MessageHandler(filters.VIDEO | filters.Document.VIDEO | filters.VIDEO_NOTE, capture_video))
 
-    # ✅ Captura VÍDEO enviado como vídeo normal, documento de vídeo e video_note (bolinha)
-    app.add_handler(
-        MessageHandler(
-            filters.VIDEO | filters.Document.VIDEO | filters.VIDEO_NOTE,
-            capture_video,
-        )
-    )
-
-    # Botão "SIM"
+    # Callbacks
     app.add_handler(CallbackQueryHandler(confirm_sim, pattern=f"^{CB_CONFIRM_SIM}$"))
+    app.add_handler(CallbackQueryHandler(acessar_vip, pattern=f"^{CB_ACESSAR_VIP}$"))
+    app.add_handler(CallbackQueryHandler(vip_quero_garantir, pattern=f"^{CB_VIP_GARANTIR}$"))
+    app.add_handler(CallbackQueryHandler(vip_me_explica, pattern=f"^{CB_VIP_EXPLICAR}$"))
+    app.add_handler(CallbackQueryHandler(vip_btn_print, pattern=f"^{CB_VIP_PRINT}$"))
+    app.add_handler(CallbackQueryHandler(vip_btn_depositar, pattern=f"^{CB_VIP_DEPOSITAR}$"))
 
     app.add_error_handler(on_error)
-    log.info("🤖 Bot rodando. FILE_ID de vídeos será capturado automaticamente.")
+    log.info("🤖 Bot rodando. VIP habilitado; aguardando prints após os botões.")
     app.run_polling(drop_pending_updates=True)
 
 if __name__ == "__main__":
