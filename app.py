@@ -212,16 +212,39 @@ async def on_error(update, context):
     log.exception("Unhandled error: %s | update=%s", context.error, update)
 
 def main():
-    request = HTTPXRequest(read_timeout=20.0, write_timeout=20.0, connect_timeout=10.0, pool_timeout=10.0)
-    app = ApplicationBuilder().token(TOKEN).request(request).job_queue(JobQueue()).build()
+    request = HTTPXRequest(
+        read_timeout=20.0,
+        write_timeout=20.0,
+        connect_timeout=10.0,
+        pool_timeout=10.0,
+    )
+    app = (
+        ApplicationBuilder()
+        .token(TOKEN)
+        .request(request)
+        .job_queue(JobQueue())
+        .build()
+    )
+
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("audiotest", audiotest))
     app.add_handler(CommandHandler("envcheck", envcheck))
     app.add_handler(CommandHandler("ids", ids))
+
+    # Áudio/voz
     app.add_handler(MessageHandler(filters.AUDIO | filters.VOICE, capture_audio))
-    # ✅ captura vídeo como VIDEO e como DOCUMENT.VIDEO
-    app.add_handler(MessageHandler(filters.VIDEO | filters.Document.VIDEO, capture_video))
+
+    # ✅ Captura VÍDEO enviado como vídeo normal, documento de vídeo e video_note (bolinha)
+    app.add_handler(
+        MessageHandler(
+            filters.VIDEO | filters.Document.VIDEO | filters.VideoNote,
+            capture_video,
+        )
+    )
+
+    # Botão "SIM"
     app.add_handler(CallbackQueryHandler(confirm_sim, pattern=f"^{CB_CONFIRM_SIM}$"))
+
     app.add_error_handler(on_error)
     log.info("🤖 Bot rodando. FILE_ID de vídeos será capturado automaticamente.")
     app.run_polling(drop_pending_updates=True)
