@@ -317,14 +317,37 @@ async def on_error(update, context):
     log.exception("Unhandled error: %s | update=%s", context.error, update)
 
 def main():
-    request = HTTPXRequest(read_timeout=20.0, write_timeout=20.0, connect_timeout=10.0, pool_timeout=10.0)
+    request = HTTPXRequest(
+        read_timeout=20.0, write_timeout=20.0,
+        connect_timeout=10.0, pool_timeout=10.0
+    )
     app = ApplicationBuilder().token(TOKEN).request(request).job_queue(JobQueue()).build()
 
+    # comandos
     app.add_handler(CommandHandler("start", start))
+
+    # mídia utilitária (capturas de file_id)
     app.add_handler(MessageHandler(filters.AUDIO | filters.VOICE, capture_audio))
     app.add_handler(MessageHandler(filters.VIDEO | filters.Document.VIDEO | filters.VIDEO_NOTE, capture_video))
+
+    # validação de print (foto ou documento de imagem)
     app.add_handler(MessageHandler(filters.PHOTO, handle_photo))
     app.add_handler(MessageHandler(filters.Document.IMAGE, handle_image_doc))
 
+    # callbacks de botões
     app.add_handler(CallbackQueryHandler(confirm_sim, pattern=f"^{CB_CONFIRM_SIM}$"))
-    app.add_handler(CallbackQueryHandler
+    app.add_handler(CallbackQueryHandler(acessar_vip, pattern=f"^{CB_ACESSAR_VIP}$"))
+    app.add_handler(CallbackQueryHandler(vip_quero_garantir, pattern=f"^{CB_VIP_GARANTIR}$"))
+    app.add_handler(CallbackQueryHandler(vip_me_explica, pattern=f"^{CB_VIP_EXPLICAR}$"))
+    app.add_handler(CallbackQueryHandler(vip_btn_print, pattern=f"^{CB_VIP_PRINT}$"))
+    app.add_handler(CallbackQueryHandler(vip_btn_depositar, pattern=f"^{CB_VIP_DEPOSITAR}$"))
+
+    # error handler
+    app.add_error_handler(on_error)
+
+    log.info("🤖 Bot unificado rodando: VIP + validação do print (OpenAI).")
+    app.run_polling(drop_pending_updates=True)
+
+
+if __name__ == "__main__":
+    main()
