@@ -288,7 +288,7 @@ async def run_start_flow(context: ContextTypes.DEFAULT_TYPE, chat_id: int, first
     saudacao = f"Falaaa {first_name}, tá por aí? 👋" if first_name else "Falaaa jogador, tá por aí? 👋"
     texto = (
         f"{saudacao}\n\n"
-        "Agora você está na *TROPA DA MARLUCE* 🤩\n\n"
+        "Agora você está na *COMUNIDADE DA MARLUCE* 🤩\n\n"
         "Aqui você tem chance de ganhar grana todo dia.\n\n"
         "Vou te mandar um áudio rápido e depois o botão pra você garantir seu presente de hoje 👇"
     )
