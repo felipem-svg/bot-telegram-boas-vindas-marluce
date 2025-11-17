@@ -18,7 +18,7 @@ log = logging.getLogger("presente-vip-unificado")
 # ========= CONFIG =========
 load_dotenv()
 TOKEN = os.getenv("TELEGRAM_TOKEN") or os.getenv("TELEGRAM_BOT_TOKEN") or ""
-If not TOKEN:
+if not TOKEN:
     raise RuntimeError("❌ Defina TELEGRAM_TOKEN (ou TELEGRAM_BOT_TOKEN) nas variáveis.")
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY", "")
 if not OPENAI_API_KEY:
