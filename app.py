@@ -92,6 +92,7 @@ CB_VIP_GARANTIR = "vip_garantir"
 CB_VIP_EXPLICAR = "vip_explicar"
 CB_VIP_PRINT = "vip_print"
 CB_VIP_DEPOSITAR = "vip_depositar"
+CB_LIBERAR_PRESENTE = "liberar_presente"  # <<< NOVO
 
 WAIT_SECONDS = 60
 VIP_WAIT_SECONDS = 7 * 60
@@ -145,6 +146,13 @@ def btn_vip_print_deposito() -> InlineKeyboardMarkup:
 def btn_whatsapp_vip() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(
         [[InlineKeyboardButton("🎉 Entrar na Comunidade VIP", url=WHATSAPP_VIP_LINK)]]
+    )
+
+
+def btn_liberar_presente() -> InlineKeyboardMarkup:
+    """Botão que dispara o fluxo do /start (sem texto, só áudio pra frente)."""
+    return InlineKeyboardMarkup(
+        [[InlineKeyboardButton("🎁 Liberar presente", callback_data=CB_LIBERAR_PRESENTE)]]
     )
 
 
@@ -515,34 +523,40 @@ async def validate_print_and_reply(
     schedule_vip_followup(context, chat_id)
 
 
-# ====== FUNIL INICIAL (aproveitado por /start e pelo RequestToJoin) ======
+# ====== FUNIL INICIAL ======
 async def run_start_flow(
     context: ContextTypes.DEFAULT_TYPE,
     chat_id: int,
     first_name: str | None = None,
+    skip_intro_text: bool = False,  # <<< NOVO
 ):
-    saudacao = (
-        f"Falaaa {first_name}, tá por aí? 👋"
-        if first_name
-        else "Falaaa jogador, tá por aí? 👋"
-    )
-
-    texto = (
-        f"{saudacao}\n\n"
-        "Agora você está na *COMUNIDADE DA MARLUCE* 🤩\n\n"
-        "Aqui você tem chance de ganhar grana todo dia.\n\n"
-        "Vou te mandar um áudio rápido e depois o botão pra você garantir "
-        "seu presente de hoje 👇"
-    )
-
-    await _retry_send(
-        lambda: context.bot.send_message(
-            chat_id=chat_id,
-            text=texto,
-            parse_mode="Markdown",
+    """
+    Se skip_intro_text=True, começa direto do áudio pra frente.
+    """
+    if not skip_intro_text:
+        saudacao = (
+            f"Falaaa {first_name}, tá por aí? 👋"
+            if first_name
+            else "Falaaa jogador, tá por aí? 👋"
         )
-    )
 
+        texto = (
+            f"{saudacao}\n\n"
+            "Agora você está na *COMUNIDADE DA MARLUCE* 🤩\n\n"
+            "Aqui você tem chance de ganhar grana todo dia.\n\n"
+            "Vou te mandar um áudio rápido e depois o botão pra você garantir "
+            "seu presente de hoje 👇"
+        )
+
+        await _retry_send(
+            lambda: context.bot.send_message(
+                chat_id=chat_id,
+                text=texto,
+                parse_mode="Markdown",
+            )
+        )
+
+    # Daqui pra frente é "só áudio pra frente"
     await send_audio_fast(
         context,
         chat_id,
@@ -573,9 +587,12 @@ async def run_start_flow(
 
 # ====== Handlers ======
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """
+    Agora o /start começa direto do áudio pra frente.
+    """
     chat_id = update.effective_chat.id
     first = update.effective_user.first_name if update.effective_user else None
-    await run_start_flow(context, chat_id, first)
+    await run_start_flow(context, chat_id, first, skip_intro_text=True)
 
 
 async def send_followup_job(context: ContextTypes.DEFAULT_TYPE):
@@ -672,6 +689,15 @@ async def vip_btn_depositar(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
 
 
+# Botão "Liberar presente" (simula /start só com áudio pra frente)
+async def liberar_presente(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    q = update.callback_query
+    await q.answer()
+    chat_id = q.message.chat_id
+    first = q.from_user.first_name if q.from_user else None
+    await run_start_flow(context, chat_id, first, skip_intro_text=True)
+
+
 # Recebe print
 async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
     photo = update.message.photo[-1]
@@ -692,6 +718,10 @@ async def handle_image_doc(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 # ====== QUANDO USA REQUEST TO JOIN NO CANAL ======
 async def on_join_request(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """
+    Quando o cliente entrar no grupo (join request aprovado),
+    manda APENAS a mensagem da TROPA DO JOTA + botão 'Liberar presente'.
+    """
     req = update.chat_join_request
     if not req:
         return
@@ -705,9 +735,24 @@ async def on_join_request(update: Update, context: ContextTypes.DEFAULT_TYPE):
         log.warning("Join request sem user_chat_id para %s", user.id)
         return
 
-    # chama o MESMO funil do /start, mas no PV
-    first = user.first_name
-    await run_start_flow(context, user_chat_id, first)
+    first = user.first_name or ""
+
+    texto = (
+        f"Falaaa {first}, tá por aí? 👋\n\n"
+        "Agora você está na COMUNIDADE DA MALU 🤩\n\n"
+        "Aqui você tem chance de ganhar todo dia.\n\n"
+        "Vou te mandar um áudio rápido e depois o botão pra você garantir "
+        "seu presente de hoje 👇"
+    )
+
+    # Manda no PV do usuário essa mensagem + botão liberar presente
+    await _retry_send(
+        lambda: context.bot.send_message(
+            chat_id=user_chat_id,
+            text=texto,
+            reply_markup=btn_liberar_presente(),
+        )
+    )
 
     # aprova a entrada no canal
     try:
@@ -791,6 +836,12 @@ def main():
         CallbackQueryHandler(
             vip_btn_depositar,
             pattern=f"^{CB_VIP_DEPOSITAR}$",
+        )
+    )
+    app.add_handler(
+        CallbackQueryHandler(
+            liberar_presente,
+            pattern=f"^{CB_LIBERAR_PRESENTE}$",
         )
     )
 
