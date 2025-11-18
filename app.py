@@ -304,6 +304,10 @@ async def run_start_flow(context: ContextTypes.DEFAULT_TYPE, chat_id: int, first
 async def start(update, context):
     chat_id = update.effective_chat.id
     first = update.effective_user.first_name if update.effective_user else None
+      args = context.args  # pega o que vem depois do /start
+    if args and args[0] == "voltei":
+        # Ele veio do botão do callback
+        return await run_start_flow(context, chat_id, first)
     await run_start_flow(context, chat_id, first)
 
 async def send_followup_job(context):
@@ -313,9 +317,22 @@ async def send_followup_job(context):
 async def confirm_sim(update, context):
     q = update.callback_query
     await q.answer()
-    chat_id = q.message.chat_id
-    texto_final = ("🎁 Presente Liberado!!!\n\nBasta você entrar na comunidade e buscar o sorteio que já vou te enviar,\n"
-                   "e fica de olho que o resultado sai na live de HOJE.")
+
+    bot_username = (await context.bot.get_me()).username
+
+    link_start = f"https://t.me/{bot_username}?start=voltei"
+
+    texto = (
+        "Para continuar e liberar seu presente, clique no botão abaixo.\n\n"
+    )
+
+    await context.bot.send_message(
+        chat_id=q.message.chat_id,
+        text=texto,
+        reply_markup=InlineKeyboardMarkup([
+            [InlineKeyboardButton("👉 Continuar", url=link_start)]
+        ])
+    )
     await send_photo_from_url(context, chat_id, "img2", IMG2_URL, texto_final, btn_comunidade_e_vip())
 
 async def acessar_vip(update, context):
