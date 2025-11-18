@@ -695,8 +695,16 @@ async def liberar_presente(update: Update, context: ContextTypes.DEFAULT_TYPE):
     q = update.callback_query
     await q.answer()
         # chama o MESMO fluxo do /start
-    await start(update, context)
+    chat_id = q.message.chat_id
+    first = q.from_user.first_name if q.from_user else None
 
+    # chama o MESMO fluxo do /start (sem o texto inicial, só áudio pra frente)
+    await run_start_flow(
+        context=context,
+        chat_id=chat_id,
+        first_name=first,
+        skip_intro_text=True,  # ou False se quiser repetir o texto de saudação
+    )
 
 # Recebe print
 async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
