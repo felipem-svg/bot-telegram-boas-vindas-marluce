@@ -62,6 +62,7 @@ LINK_COMUNIDADE_FINAL = "https://t.me/+Qu9Lkn7hrX1kZjQx"
 IMG1_URL = "https://i.postimg.cc/Z5k8RDCs/presente-da-marluce.png"
 IMG2_URL = "https://i.postimg.cc/WzkDcT6V/presente-da-marluce-2.png"
 WHATSAPP_VIP_LINK = "https://chat.whatsapp.com/CPj6L57HPZK1MYE1f6WAre"
+CB_LIBERAR_PRESENTE = "liberar_presente"  # constante do callback
 
 # Cache JSON para file_ids
 CACHE_PATH = os.path.join(os.path.dirname(__file__), "file_ids.json")  # <<< __file__
@@ -693,9 +694,8 @@ async def vip_btn_depositar(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def liberar_presente(update: Update, context: ContextTypes.DEFAULT_TYPE):
     q = update.callback_query
     await q.answer()
-    chat_id = q.message.chat_id
-    first = q.from_user.first_name if q.from_user else None
-    await run_start_flow(context, chat_id, first, skip_intro_text=True)
+        # chama o MESMO fluxo do /start
+    await start(update, context)
 
 
 # Recebe print
