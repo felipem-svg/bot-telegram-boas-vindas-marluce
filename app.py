@@ -304,12 +304,15 @@ async def run_start_flow(context: ContextTypes.DEFAULT_TYPE, chat_id: int, first
 async def start(update, context):
     chat_id = update.effective_chat.id
     first = update.effective_user.first_name if update.effective_user else None
-      args = context.args  # pega o que vem depois do /start
-    if args and args[0] == "voltei":
-        # Ele veio do botão do callback
-        return await run_start_flow(context, chat_id, first)
-    await run_start_flow(context, chat_id, first)
+    args = context.args  # pega o que vem depois do /start
 
+    # Ele veio do botão do callback
+    if args and args[0] == "voltei":
+        return await run_start_flow(context, chat_id, first)
+
+    # start normal
+    await run_start_flow(context, chat_id, first)
+    
 async def send_followup_job(context):
     chat_id = context.job.data["chat_id"]
     await _retry_send(lambda: context.bot.send_message(chat_id=chat_id, text="Eae, já conseguiu finalizar a criação da sua conta?", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton('✅ SIM', callback_data=CB_CONFIRM_SIM)]])))
