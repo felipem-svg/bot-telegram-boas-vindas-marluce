@@ -16,9 +16,10 @@ from telegram.ext import (
     JobQueue,
     MessageHandler,
     filters,
-    ChatJoinRequestHandler,  # <<< ADICIONADO
+    ChatJoinRequestHandler,
 )
 from telegram.request import HTTPXRequest
+import telegram
 from telegram.error import RetryAfter, TimedOut
 from openai import OpenAI
 from PIL import Image
@@ -36,6 +37,11 @@ load_dotenv()
 TOKEN = os.getenv("TELEGRAM_TOKEN") or os.getenv("TELEGRAM_BOT_TOKEN") or ""
 if not TOKEN:
     raise RuntimeError("❌ Defina TELEGRAM_TOKEN (ou TELEGRAM_BOT_TOKEN) nas variáveis.")
+
+# username do bot, sem @ (ex: presentedamarlucebot)
+BOT_USERNAME = (os.getenv("BOT_USERNAME") or "").lstrip("@")
+if not BOT_USERNAME:
+    raise RuntimeError("❌ Defina BOT_USERNAME nas variáveis de ambiente (sem @).")
 
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY", "")
 if not OPENAI_API_KEY:
@@ -62,10 +68,9 @@ LINK_COMUNIDADE_FINAL = "https://t.me/+Qu9Lkn7hrX1kZjQx"
 IMG1_URL = "https://i.postimg.cc/Z5k8RDCs/presente-da-marluce.png"
 IMG2_URL = "https://i.postimg.cc/WzkDcT6V/presente-da-marluce-2.png"
 WHATSAPP_VIP_LINK = "https://chat.whatsapp.com/CPj6L57HPZK1MYE1f6WAre"
-CB_LIBERAR_PRESENTE = "liberar_presente"  # constante do callback
 
 # Cache JSON para file_ids
-CACHE_PATH = os.path.join(os.path.dirname(__file__), "file_ids.json")  # <<< __file__
+CACHE_PATH = os.path.join(os.path.dirname(__file__), "file_ids.json")
 
 
 def load_cache() -> dict:
@@ -93,7 +98,6 @@ CB_VIP_GARANTIR = "vip_garantir"
 CB_VIP_EXPLICAR = "vip_explicar"
 CB_VIP_PRINT = "vip_print"
 CB_VIP_DEPOSITAR = "vip_depositar"
-CB_LIBERAR_PRESENTE = "liberar_presente"  # <<< NOVO
 
 WAIT_SECONDS = 60
 VIP_WAIT_SECONDS = 7 * 60
@@ -101,6 +105,7 @@ VIP_WAIT_SECONDS = 7 * 60
 VIP_PENDING_PRINT: set[int] = set()  # chats aguardando print
 
 AUDIO_FILE_LOCAL = "Audio.mp3"
+
 
 # ====== Botões ======
 def btn_criar_conta() -> InlineKeyboardMarkup:
@@ -151,9 +156,19 @@ def btn_whatsapp_vip() -> InlineKeyboardMarkup:
 
 
 def btn_liberar_presente() -> InlineKeyboardMarkup:
-    """Botão que dispara o fluxo do /start (sem texto, só áudio pra frente)."""
+    """
+    Botão que dispara o /start via deep-link.
+    Quando o usuário clica, o Telegram envia /start presente para o bot.
+    """
     return InlineKeyboardMarkup(
-        [[InlineKeyboardButton("🎁 Liberar presente", callback_data=CB_LIBERAR_PRESENTE)]]
+        [
+            [
+                InlineKeyboardButton(
+                    "🎁 Liberar presente",
+                    url=f"https://t.me/{BOT_USERNAME}?start=presente",
+                )
+            ]
+        ]
     )
 
 
@@ -166,6 +181,9 @@ async def _retry_send(coro_factory, max_attempts: int = 2):
         except (RetryAfter, TimedOut) as e:
             last = e
             await asyncio.sleep(1)
+        except telegram.error.RetryAfter as e:
+            last = e
+            await asyncio.sleep(e.retry_after)
         except Exception as e:
             last = e
             break
@@ -247,7 +265,7 @@ async def send_audio_fast(
             FILE_IDS.pop("audio", None)
             save_cache(FILE_IDS)
 
-    full = os.path.join(os.path.dirname(__file__), AUDIO_FILE_LOCAL)  # <<< __file__
+    full = os.path.join(os.path.dirname(__file__), AUDIO_FILE_LOCAL)
     if os.path.exists(full) and os.path.getsize(full) > 0:
         with open(full, "rb") as f:
             msg = await _retry_send(
@@ -529,7 +547,7 @@ async def run_start_flow(
     context: ContextTypes.DEFAULT_TYPE,
     chat_id: int,
     first_name: str | None = None,
-    skip_intro_text: bool = False,  # <<< NOVO
+    skip_intro_text: bool = False,
 ):
     """
     Se skip_intro_text=True, começa direto do áudio pra frente.
@@ -589,11 +607,24 @@ async def run_start_flow(
 # ====== Handlers ======
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """
-    Agora o /start começa direto do áudio pra frente.
+    /start padrão e também chamado via deep-link ?start=presente
     """
     chat_id = update.effective_chat.id
     first = update.effective_user.first_name if update.effective_user else None
-    await run_start_flow(context, chat_id, first, skip_intro_text=True)
+
+    args = context.args or []
+    from_presente = len(args) > 0 and args[0] == "presente"
+
+    # aqui você pode diferenciar o comportamento se quiser
+    # por enquanto, sempre começa direto do áudio pra frente
+    skip_intro = True
+
+    await run_start_flow(
+        context,
+        chat_id,
+        first,
+        skip_intro_text=skip_intro,
+    )
 
 
 async def send_followup_job(context: ContextTypes.DEFAULT_TYPE):
@@ -690,22 +721,6 @@ async def vip_btn_depositar(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
 
 
-# Botão "Liberar presente" (simula /start só com áudio pra frente)
-async def liberar_presente(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    q = update.callback_query
-    await q.answer()
-        # chama o MESMO fluxo do /start
-    chat_id = q.message.chat_id
-    first = q.from_user.first_name if q.from_user else None
-
-    # chama o MESMO fluxo do /start (sem o texto inicial, só áudio pra frente)
-    await run_start_flow(
-        context=context,
-        chat_id=chat_id,
-        first_name=first,
-        skip_intro_text=True,  # ou False se quiser repetir o texto de saudação
-    )
-
 # Recebe print
 async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
     photo = update.message.photo[-1]
@@ -728,7 +743,7 @@ async def handle_image_doc(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def on_join_request(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """
     Quando o cliente entrar no grupo (join request aprovado),
-    manda APENAS a mensagem da TROPA DO JOTA + botão 'Liberar presente'.
+    manda mensagem + botão 'Liberar presente' no PV.
     """
     req = update.chat_join_request
     if not req:
@@ -753,7 +768,7 @@ async def on_join_request(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "seu presente de hoje 👇"
     )
 
-    # Manda no PV do usuário essa mensagem + botão liberar presente
+    # Manda no PV do usuário essa mensagem + botão liberar presente (deep-link)
     await _retry_send(
         lambda: context.bot.send_message(
             chat_id=user_chat_id,
@@ -790,7 +805,7 @@ def main():
         .build()
     )
 
-    # <<< NOVO: handler para Request to Join
+    # handler para Request to Join
     app.add_handler(ChatJoinRequestHandler(on_join_request))
 
     # comandos
@@ -846,22 +861,16 @@ def main():
             pattern=f"^{CB_VIP_DEPOSITAR}$",
         )
     )
-    app.add_handler(
-        CallbackQueryHandler(
-            liberar_presente,
-            pattern=f"^{CB_LIBERAR_PRESENTE}$",
-        )
-    )
 
     # error handler
     app.add_error_handler(on_error)
 
     log.info(
-        "🤖 Bot unificado rodando: RequestToJoin + VIP + validação do print (OpenAI)."
+        "🤖 Bot unificado rodando: RequestToJoin + VIP + validação do print (OpenAI) + deep-link do presente."
     )
 
     app.run_polling(drop_pending_updates=True)
 
 
-if __name__ == "__main__":  # <<< __name__
+if __name__ == "__main__":
     main()
