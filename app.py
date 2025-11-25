@@ -65,8 +65,8 @@ LINK_CADASTRO = (
     "&qtag=a5610_t265_c270_s019a7023-794b-7178-92ef-f9ceb8fe77a2_"
 )
 LINK_COMUNIDADE_FINAL = "https://t.me/+i_mptncl5IdmNjEx"
-IMG1_URL = "https://i.postimg.cc/Z5k8RDCs/presente-da-marluce.png"
-IMG2_URL = "https://i.postimg.cc/WzkDcT6V/presente-da-marluce-2.png"
+IMG1_URL = "https://gallery-r3de.s3.us-east-2.amazonaws.com/presente_da_marluce.png"
+IMG2_URL = "https://gallery-r3de.s3.us-east-2.amazonaws.com/presente_da_marluce_2.png"
 WHATSAPP_VIP_LINK = "https://chat.whatsapp.com/CPj6L57HPZK1MYE1f6WAre"
 
 # Cache JSON para file_ids
