@@ -64,7 +64,7 @@ LINK_CADASTRO = (
     "&utm_campaign=265&utm_content=topslots_br&utm_term=5610&aff=alanbase"
     "&qtag=a5610_t265_c270_s019a7023-794b-7178-92ef-f9ceb8fe77a2_"
 )
-LINK_COMUNIDADE_FINAL = "https://t.me/+Qu9Lkn7hrX1kZjQx"
+LINK_COMUNIDADE_FINAL = "https://t.me/+i_mptncl5IdmNjEx"
 IMG1_URL = "https://i.postimg.cc/Z5k8RDCs/presente-da-marluce.png"
 IMG2_URL = "https://i.postimg.cc/WzkDcT6V/presente-da-marluce-2.png"
 WHATSAPP_VIP_LINK = "https://chat.whatsapp.com/CPj6L57HPZK1MYE1f6WAre"
